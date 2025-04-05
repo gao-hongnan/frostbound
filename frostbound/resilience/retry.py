@@ -6,13 +6,7 @@ import inspect
 import logging
 import random
 import time
-from collections.abc import (
-    Awaitable,
-    Callable,
-    Sequence,
-    Generator,
-    AsyncGenerator,
-)
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
@@ -21,15 +15,14 @@ from typing import (
     ContextManager,
     Generic,
     Literal,
+    ParamSpec,
     Protocol,
     TypeVar,
     cast,
     final,
     overload,
     runtime_checkable,
-    ParamSpec,
 )
-
 
 P = ParamSpec("P")
 P1 = ParamSpec("P1")

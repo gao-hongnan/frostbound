@@ -6,7 +6,7 @@ import time
 from contextlib import contextmanager
 from enum import Enum, auto
 from functools import wraps
-from typing import Any, Callable, Generic, Generator, TypeVar, cast, overload, ParamSpec
+from typing import Any, Callable, Generator, Generic, ParamSpec, TypeVar, cast, overload
 
 P = ParamSpec("P")
 R = TypeVar("R")
