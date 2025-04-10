@@ -29,7 +29,6 @@ line-length = 120
 indent-width = 4
 output-format = "grouped"
 
-# Assume Python 3.9
 target-version = "py312"
 
 [lint]
@@ -70,7 +69,7 @@ select = [
     "PLW0711", # binary op exception
     "PLW1509", # preexec_fn not safe with threads
     "PLW3301", # nested min max
-    "PT006", # TODO: enable more PT rules
+    "PT006",   # TODO: enable more PT rules
     "PT022",
     "PT023",
     "PT024",
@@ -97,8 +96,8 @@ unfixable = []
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
-[format] # default config from ruff
-quote-style = "double" # Like Black, use double quotes for strings.
+[format]                            # default config from ruff
+quote-style = "double"              # Like Black, use double quotes for strings.
 indent-style = "space"              # Like Black, indent with spaces, rather than tabs.
-skip-magic-trailing-comma = false # Like Black, respect magic trailing commas.
-line-ending = "auto" # Like Black, automatically detect the appropriate line ending.
+skip-magic-trailing-comma = false   # Like Black, respect magic trailing commas.
+line-ending = "auto"                # Like Black, automatically detect the appropriate line ending.
