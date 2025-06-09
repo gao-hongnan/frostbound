@@ -55,12 +55,16 @@ class Experiment:
         self,
         experiment_id: ExperimentID,
         storage: StorageBackend,
+        description: str = "",
+        tags: list[str] | None = None,
     ) -> None:
         self._id = experiment_id
         self._storage = storage
 
         self._metadata = ExperimentMetadataModel(
             experiment_id=experiment_id,
+            description=description,
+            tags=tags or [],
             git_info=get_git_info(),
         )
         self._artifacts: dict[ArtifactKey, StorageKey] = {}

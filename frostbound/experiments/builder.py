@@ -70,15 +70,11 @@ class ExperimentBuilder:
         experiment = Experiment(
             experiment_id=experiment_id,  # type: ignore[arg-type]
             storage=self._storage,
+            description=self._config.description,
+            tags=self._config.tags,
         )
 
         for key, value in self._config.parameters.items():
             experiment.add_parameter(key, value)
-
-        if self._config.description:
-            experiment._metadata = experiment._metadata.model_copy(update={"description": self._config.description})
-
-        if self._config.tags:
-            experiment._metadata = experiment._metadata.model_copy(update={"tags": self._config.tags})
 
         return experiment
