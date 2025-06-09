@@ -10,11 +10,11 @@ from typing import (
     Callable,
     Coroutine,
     Generic,
+    ParamSpec,
+    Self,
     TypeVar,
     cast,
     overload,
-    ParamSpec,
-    Self,
 )
 
 P = ParamSpec("P")

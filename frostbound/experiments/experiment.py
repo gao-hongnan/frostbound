@@ -1,20 +1,62 @@
+"""
+The two _save_metadata() calls will NOT overwrite each other destructively.
+
+  def _start_experiment(self) -> None:
+      self._save_metadata()  # Saves initial metadata
+
+  Initial metadata content:
+  {
+    "experiment_id": "finetuning_20250608_173421",
+    "created_at": 1717857261.123,
+    "completed_at": null,           // ← Not completed yet
+    "status": "running",            // ← Running status
+    "tags": ["demo", "finetuning"],
+    "description": "Demo finetuning experiment",
+    "git_info": {...}
+  }
+
+
+  def complete(self) -> None:
+      self._metadata = self._metadata.model_copy(
+          update={
+              "completed_at": time.time(),    // ← Now has completion time
+              "status": "completed",          // ← Updated status
+          }
+      )
+      self._save_metadata()  # Saves UPDATED metadata
+
+  Final metadata content:
+  {
+    "experiment_id": "finetuning_20250608_173421",
+    "created_at": 1717857261.123,    // ← Same (preserved)
+    "completed_at": 1717857265.456,  // ← NOW populated
+    "status": "completed",           // ← Updated from "running"
+    "tags": ["demo", "finetuning"],   // ← Same (preserved)
+    "description": "Demo finetuning experiment",
+    "git_info": {...}                // ← Same (preserved)
+  }
+
+
+1. Same file path: Both save to {experiment_id}/metadata/experiment.json
+2. Intentional overwrite: The second call is meant to update the first
+3. Data preservation: model_copy(update={...}) only changes specific fields
+4. Atomic operation: Each _save_metadata() writes the complete current state
+"""
+
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import posixpath
-import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from pydantic import BaseModel
 
 from frostbound.experiments.constants import (
-    EMPTY_STRING,
     YAML_EXTENSIONS,
     Categories,
     ExperimentStatus,
@@ -29,28 +71,68 @@ from frostbound.experiments.types import (
     FilePath,
     MetricKey,
     ParameterKey,
+    RelativePath,
     StorageKey,
 )
+from frostbound.versioning.git_info import get_git_info
 
 if TYPE_CHECKING:
     from frostbound.experiments.protocols import StorageBackend
 
 
-def get_git_info() -> dict[str, Any]:
-    try:
-        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], text=True).strip()
-        dirty = subprocess.call(["git", "diff", "--quiet"]) != 0
-        return {
-            "commit": commit,
-            "branch": branch,
-            "dirty": dirty,
-        }
-    except Exception:
-        return {"commit": None, "branch": None, "dirty": None}
-
-
 class Experiment:
+    """
+    MLflow-inspired experiment tracking system with structured file organization.
+
+    The Experiment class provides two distinct file saving approaches:
+
+    1. **Category-based saving** (structured): Files are organized into predefined categories
+       under the experiment directory. This creates a consistent structure:
+
+       ```
+       {experiment_id}/
+       ├── artifacts/        # User files via save_artifact(), save_dict(), save_text()
+       ├── metadata/         # Experiment metadata (automatic)
+       ├── metrics/          # Recorded metrics (automatic)
+       └── parameters/       # Experiment parameters (automatic)
+       ```
+
+    2. **Direct path saving** (flexible): Files can be saved to any relative path
+       within the experiment directory using save_file(), bypassing categories.
+
+    Parameters
+    ----------
+    experiment_id : ExperimentID
+        Unique identifier for the experiment (e.g., "llama_0250609_122016")
+    storage : StorageBackend
+        Storage backend implementation for file operations
+    description : str, optional
+        Human-readable description of the experiment, by default ""
+    tags : list[str] | None, optional
+        List of tags for experiment categorization, by default None
+
+    Examples
+    --------
+    Basic experiment creation and file saving:
+
+    >>> from frostbound.experiments.storage import LocalFileStorage
+    >>> storage = LocalFileStorage("/path/to/experiments")
+    >>> experiment = Experiment(
+    ...     experiment_id="llama_0250609_122016",
+    ...     storage=storage,
+    ...     description="Llama finetune experiment",
+    ...     tags=["finetune", "production"]
+    ... )
+
+    The experiment will create this directory structure:
+
+    ```
+    /path/to/experiments/llama_0250609_122016/
+    └── metadata/
+        └── experiment.json  # Created automatically
+    ```
+    """
+
     def __init__(
         self,
         experiment_id: ExperimentID,
@@ -65,7 +147,7 @@ class Experiment:
             experiment_id=experiment_id,
             description=description,
             tags=tags or [],
-            git_info=get_git_info(),
+            git_info=get_git_info().model_dump(),
         )
         self._artifacts: dict[ArtifactKey, StorageKey] = {}
         self._metrics: dict[MetricKey, float | int] = {}
@@ -97,6 +179,59 @@ class Experiment:
         return self._parameters.copy()
 
     def save_artifact(self, source_file: FilePath, artifact_path: ArtifactPath | None = None) -> ArtifactKey:
+        """
+        Save a single file to the experiment's artifacts directory (category-based).
+
+        This method enforces the structured approach by always saving files under
+        the `artifacts/` category within the experiment directory.
+
+        Parameters
+        ----------
+        source_file : FilePath
+            Path to the source file to be saved
+        artifact_path : ArtifactPath | None, optional
+            Subdirectory path within artifacts/ where the file should be saved.
+            If None, saves directly to artifacts/, by default None
+
+        Returns
+        -------
+        ArtifactKey
+            Storage key for the saved artifact (same as storage path)
+
+        Examples
+        --------
+        Save file to artifacts root:
+
+        >>> experiment.save_artifact("/tmp/model.pkl")
+        'llama_0250609_122016/artifacts/model.pkl'
+
+        Save file to artifacts subdirectory:
+
+        >>> experiment.save_artifact("/tmp/config.yaml", artifact_path="configs")
+        'llama_0250609_122016/artifacts/configs/config.yaml'
+
+        >>> experiment.save_artifact("/home/user/logs/training.log", artifact_path="logs")
+        'llama_0250609_122016/artifacts/logs/training.log'
+
+        Resulting directory structure:
+
+        ```
+        llama_0250609_122016/
+        └── artifacts/
+            ├── model.pkl
+            ├── configs/
+            │   └── config.yaml
+            └── logs/
+                └── training.log
+        ```
+
+        Notes
+        -----
+        - The original filename is preserved
+        - Intermediate directories are created automatically
+        - Files are always saved under artifacts/ category
+        - Use save_file() if you need to bypass the artifacts/ prefix
+        """
         request = SaveArtifactRequest(source_file=Path(source_file), artifact_path=artifact_path)
 
         filename = request.source_file.name
@@ -115,6 +250,80 @@ class Experiment:
     def save_artifacts(
         self, source_directory: FilePath, artifact_path: ArtifactPath | None = None
     ) -> list[ArtifactKey]:
+        """
+        Save an entire directory tree to the experiment's artifacts directory (category-based).
+
+        This method recursively saves all files in a directory while preserving
+        the directory structure under the `artifacts/` category.
+
+        Parameters
+        ----------
+        source_directory : FilePath
+            Path to the source directory to be saved recursively
+        artifact_path : ArtifactPath | None, optional
+            Subdirectory path within artifacts/ where the directory should be saved.
+            If None, saves directly to artifacts/, by default None
+
+        Returns
+        -------
+        list[ArtifactKey]
+            List of storage keys for all saved files
+
+        Examples
+        --------
+        Save directory to artifacts root:
+
+        >>> experiment.save_artifacts("/tmp/model_outputs/")
+        ['llama_0250609_122016/artifacts/predictions.csv',
+         'llama_0250609_122016/artifacts/metrics.json',
+         'llama_0250609_122016/artifacts/plots/accuracy.png']
+
+        Save directory to artifacts subdirectory:
+
+        >>> experiment.save_artifacts("/home/user/training_data/", artifact_path="datasets")
+        ['llama_0250609_122016/artifacts/datasets/train.csv',
+         'llama_0250609_122016/artifacts/datasets/test.csv',
+         'llama_0250609_122016/artifacts/datasets/validation.csv']
+
+        Source directory structure:
+
+        ```
+        /tmp/model_outputs/
+        ├── predictions.csv
+        ├── metrics.json
+        └── plots/
+            └── accuracy.png
+        ```
+
+        Resulting experiment structure:
+
+        ```
+        llama_0250609_122016/
+        └── artifacts/
+            ├── predictions.csv
+            ├── metrics.json
+            └── plots/
+                └── accuracy.png
+        ```
+
+        With artifact_path="datasets":
+
+        ```
+        llama_0250609_122016/
+        └── artifacts/
+            └── datasets/
+                ├── train.csv
+                ├── test.csv
+                └── validation.csv
+        ```
+
+        Notes
+        -----
+        - Directory structure is preserved recursively
+        - All files are saved under artifacts/ category
+        - Empty directories are not created (only files are saved)
+        - Large directories may take significant time to process
+        """
         request = SaveArtifactsRequest(source_directory=Path(source_directory), artifact_path=artifact_path)
 
         artifact_keys: list[ArtifactKey] = []
@@ -136,30 +345,258 @@ class Experiment:
 
         return artifact_keys
 
-    @contextlib.contextmanager
-    def _artifact_helper(self, artifact_file: str) -> Generator[str, None, None]:
-        norm_path = posixpath.normpath(artifact_file)
-        filename = posixpath.basename(norm_path)
-        artifact_dir = posixpath.dirname(norm_path)
-        artifact_dir = None if artifact_dir == EMPTY_STRING else artifact_dir
+    def save_file(self, source_file: FilePath, relative_path: RelativePath) -> StorageKey:
+        """
+        Save file to any relative path within experiment directory (direct path saving).
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = os.path.join(tmp_dir, filename)
-            yield tmp_path
-            self.save_artifact(tmp_path, artifact_dir)
+        This method bypasses the category-based structure and allows files to be saved
+        directly to any relative path within the experiment directory. This provides
+        maximum flexibility for custom directory layouts.
 
-    def save_dict(self, dictionary: dict[str, Any], artifact_file: str) -> None:
-        extension = os.path.splitext(artifact_file)[1]
+        Parameters
+        ----------
+        source_file : FilePath
+            Path to the source file to be saved
+        relative_path : RelativePath
+            Relative path within experiment directory where file should be saved.
+            Can include subdirectories (e.g., "configs/config.yaml", "logs/debug.log")
 
-        with self._artifact_helper(artifact_file) as tmp_path, open(tmp_path, "w") as f:
+        Returns
+        -------
+        StorageKey
+            Storage key for the saved file (experiment_id/relative_path)
+
+        Raises
+        ------
+        FileNotFoundError
+            If the source file does not exist
+
+        Examples
+        --------
+        Save config file directly to configs/ (bypassing artifacts/):
+
+        >>> experiment.save_file("/tmp/config.yaml", "configs/config.yaml")
+        'llama_0250609_122016/configs/config.yaml'
+
+        Save log file to custom logs directory:
+
+        >>> experiment.save_file("/var/log/training.log", "logs/training.log")
+        'llama_0250609_122016/logs/training.log'
+
+        Save file to experiment root:
+
+        >>> experiment.save_file("/tmp/README.md", "README.md")
+        'llama_0250609_122016/README.md'
+
+        Save file with nested subdirectories:
+
+        >>> experiment.save_file("/tmp/plot.png", "results/visualizations/accuracy_plot.png")
+        'llama_0250609_122016/results/visualizations/accuracy_plot.png'
+
+        Resulting directory structure:
+
+        ```
+        llama_0250609_122016/
+        ├── README.md                          # Root level
+        ├── configs/
+        │   └── config.yaml                    # Custom config directory
+        ├── logs/
+        │   └── training.log                   # Custom logs directory
+        └── results/
+            └── visualizations/
+                └── accuracy_plot.png          # Nested custom structure
+        ```
+
+        Notes
+        -----
+        - **No category prefix**: Files are saved directly to the specified path
+        - **Flexible structure**: Create any directory layout you need
+        - **Automatic directory creation**: Intermediate directories are created automatically
+        - **Filename preservation**: Original filename is preserved in the relative_path
+        - **Comparison with category-based methods**:
+
+          * save_artifact("file.txt", "configs") → artifacts/configs/file.txt
+          * save_file("file.txt", "configs/file.txt") → configs/file.txt
+
+        Use this method when you need files outside the artifacts/ structure or want
+        a specific directory layout that doesn't fit the category-based approach.
+        """
+        source_file_path = Path(source_file)
+        if not source_file_path.exists():
+            raise FileNotFoundError(f"Source file not found: {source_file}")
+
+        storage_key = f"{self._id}/{relative_path}"
+        self._storage.save(storage_key, source_file_path)
+        return storage_key
+
+    def save_dict(self, dictionary: dict[str, Any], path: RelativePath) -> StorageKey:
+        """
+        Save a dictionary as JSON/YAML file to any path within the experiment directory.
+
+        This method serializes a dictionary to JSON or YAML format based on the file extension
+        and saves it to the specified path within the experiment directory. This provides
+        full flexibility for organizing files according to your needs.
+
+        Parameters
+        ----------
+        dictionary : dict[str, Any]
+            Dictionary to be serialized and saved
+        path : RelativePath
+            Relative path within the experiment directory where the file should be saved,
+            including filename. Extension determines format: .yaml/.yml → YAML, others → JSON.
+
+        Returns
+        -------
+        StorageKey
+            Storage key for the saved file (experiment_id/path)
+
+        Examples
+        --------
+        Save configuration to artifacts directory:
+
+        >>> config = {"model": "gpt-4", "temperature": 0.7}
+        >>> experiment.save_dict(config, "artifacts/config.json")
+        'llama_0250609_122016/artifacts/config.json'
+
+        Save settings to custom configs directory:
+
+        >>> settings = {"database_url": "localhost", "debug": True}
+        >>> experiment.save_dict(settings, "configs/settings.yaml")
+        'llama_0250609_122016/configs/settings.yaml'
+
+        Save results to evaluation directory:
+
+        >>> results = {"accuracy": 0.95, "loss": 0.23, "epochs": 100}
+        >>> experiment.save_dict(results, "evaluation/metrics.json")
+        'llama_0250609_122016/evaluation/metrics.json'
+
+        Save parameters with nested structure:
+
+        >>> hyperparams = {"learning_rate": 0.001, "batch_size": 32}
+        >>> experiment.save_dict(hyperparams, "training/hyperparameters.yaml")
+        'llama_0250609_122016/training/hyperparameters.yaml'
+
+        Resulting directory structure:
+
+        ```
+        llama_0250609_122016/
+        ├── artifacts/
+        │   └── config.json
+        ├── configs/
+        │   └── settings.yaml
+        ├── evaluation/
+        │   └── metrics.json
+        └── training/
+            └── hyperparameters.yaml
+        ```
+
+        Notes
+        -----
+        - **Path flexibility**: Save to any relative path within the experiment directory
+        - **Automatic serialization**: Dictionary is converted to JSON/YAML automatically
+        - **Format detection**: .yaml/.yml extensions → YAML, others → JSON
+        - **Pretty formatting**: JSON uses 2-space indentation, YAML uses default formatting
+        - **Directory creation**: Intermediate directories are created automatically
+        - **MLflow-style**: This API follows a similar pattern to MLflow's artifact logging
+        """
+        path = posixpath.normpath(path)
+        extension = posixpath.splitext(path)[1]
+
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False) as tmp_file:
             if extension in YAML_EXTENSIONS:
-                yaml.dump(dictionary, f, indent=2, default_flow_style=False)
+                yaml.dump(dictionary, tmp_file, indent=4, default_flow_style=False)
             else:
-                json.dump(dictionary, f, indent=2, default=str)
+                json.dump(dictionary, tmp_file, indent=4, default=str)
+            tmp_path = tmp_file.name
 
-    def save_text(self, text: str, artifact_file: str) -> None:
-        with self._artifact_helper(artifact_file) as tmp_path, open(tmp_path, "w", encoding="utf-8") as f:
-            f.write(text)
+        try:
+            storage_key = f"{self._id}/{path}"
+            self._storage.save(storage_key, Path(tmp_path))
+            return storage_key
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    def save_text(self, text: str, path: RelativePath) -> StorageKey:
+        """
+        Save text content as a file to any path within the experiment directory.
+
+        This method saves text content directly to a file at the specified path
+        within the experiment directory with UTF-8 encoding. This provides full
+        flexibility for organizing files according to your needs.
+
+        Parameters
+        ----------
+        text : str
+            Text content to be saved
+        path : RelativePath
+            Relative path within the experiment directory where the file should be saved,
+            including filename.
+
+        Returns
+        -------
+        StorageKey
+            Storage key for the saved file (experiment_id/path)
+
+        Examples
+        --------
+        Save log content to logs directory:
+
+        >>> log_content = "2024-06-09 12:20:16 - Training started\\n2024-06-09 12:25:30 - Epoch 1 complete"
+        >>> experiment.save_text(log_content, "logs/training.log")
+        'llama_0250609_122016/logs/training.log'
+
+        Save model summary to artifacts:
+
+        >>> model_summary = "Model: GPT-4\\nParameters: 175B\\nTraining: Supervised"
+        >>> experiment.save_text(model_summary, "artifacts/model_summary.txt")
+        'llama_0250609_122016/artifacts/model_summary.txt'
+
+        Save README to experiment root:
+
+        >>> readme_text = "# Experiment Overview\\nThis experiment tests..."
+        >>> experiment.save_text(readme_text, "README.md")
+        'llama_0250609_122016/README.md'
+
+        Save notes to documentation directory:
+
+        >>> notes = "Important findings from today's run..."
+        >>> experiment.save_text(notes, "documentation/notes.txt")
+        'llama_0250609_122016/documentation/notes.txt'
+
+        Resulting directory structure:
+
+        ```
+        llama_0250609_122016/
+        ├── README.md
+        ├── artifacts/
+        │   └── model_summary.txt
+        ├── documentation/
+        │   └── notes.txt
+        └── logs/
+            └── training.log
+        ```
+
+        Notes
+        -----
+        - **Path flexibility**: Save to any relative path within the experiment directory
+        - **UTF-8 encoding**: All text files are saved with UTF-8 encoding
+        - **No automatic formatting**: Text is saved exactly as provided
+        - **Directory creation**: Intermediate directories are created automatically
+        - **MLflow-style**: This API follows a similar pattern to MLflow's artifact logging
+        - Use save_dict() for structured data that needs JSON/YAML formatting
+        """
+        path = posixpath.normpath(path)
+
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False) as tmp_file:
+            tmp_file.write(text)
+            tmp_path = tmp_file.name
+
+        try:
+            storage_key = f"{self._id}/{path}"
+            self._storage.save(storage_key, Path(tmp_path))
+            return storage_key
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
 
     def load_artifact(self, key: ArtifactKey, path: FilePath) -> None:
         if key not in self._artifacts:
@@ -169,15 +606,151 @@ class Experiment:
         self._storage.load(storage_key, Path(path))
 
     def record_metric(self, key: MetricKey, value: float) -> None:
+        """
+        Record a metric value and save it to the experiment's metrics directory (category-based).
+
+        This method stores metrics both in memory and persists them as individual files
+        under the `metrics/` category for easy access and analysis.
+
+        Parameters
+        ----------
+        key : MetricKey
+            Unique identifier for the metric (e.g., "accuracy", "loss", "f1_score")
+        value : float
+            Numeric value of the metric
+
+        Examples
+        --------
+        Record training metrics:
+
+        >>> experiment.record_metric("accuracy", 0.95)
+        # Saves to: llama_0250609_122016/metrics/accuracy.txt
+
+        >>> experiment.record_metric("loss", 0.234)
+        # Saves to: llama_0250609_122016/metrics/loss.txt
+
+        >>> experiment.record_metric("f1_score", 0.87)
+        # Saves to: llama_0250609_122016/metrics/f1_score.txt
+
+        Resulting directory structure:
+
+        ```
+        llama_0250609_122016/
+        └── metrics/
+            ├── accuracy.txt      # Contains: 0.95
+            ├── loss.txt          # Contains: 0.234
+            └── f1_score.txt      # Contains: 0.87
+        ```
+
+        Notes
+        -----
+        - **Immediate persistence**: Metrics are saved immediately when recorded
+        - **Individual files**: Each metric gets its own .txt file for easy parsing
+        - **In-memory storage**: Metrics are also stored in memory for quick access
+        - **Category-based**: Always saves under metrics/ directory
+        - **Automatic filename**: Filename is generated from the metric key
+        - Use experiment.metrics property to access all recorded metrics
+        """
         self._metrics[key] = value
         self._save_to_storage_via_tempfile(
             data=value, category=Categories.METRICS, filename=f"{key}.txt", suffix=FileExtensions.TXT
         )
 
     def add_parameter(self, key: ParameterKey, value: Any) -> None:
+        """
+        Add a parameter to the experiment (stored in memory, persisted on completion).
+
+        Parameters are configuration values, hyperparameters, or other settings that
+        characterize the experiment. They are stored in memory and saved to the
+        `parameters/` category when the experiment is completed.
+
+        Parameters
+        ----------
+        key : ParameterKey
+            Unique identifier for the parameter (e.g., "learning_rate", "batch_size")
+        value : Any
+            Value of the parameter (can be any JSON-serializable type)
+
+        Examples
+        --------
+        Add hyperparameters:
+
+        >>> experiment.add_parameter("learning_rate", 0.001)
+        >>> experiment.add_parameter("batch_size", 32)
+        >>> experiment.add_parameter("model_name", "gpt-4o-mini")
+        >>> experiment.add_parameter("use_dropout", True)
+
+        After calling experiment.complete(), these are saved to:
+
+        ```
+        llama_0250609_122016/
+        └── parameters/
+            └── parameters.json   # Contains all parameters as JSON
+        ```
+
+        Notes
+        -----
+        - **Delayed persistence**: Parameters are only saved when experiment.complete() is called
+        - **In-memory storage**: Parameters are stored in memory for immediate access
+        - **JSON serialization**: Values must be JSON-serializable
+        - **Single file**: All parameters are saved together in parameters.json
+        - Use experiment.parameters property to access all stored parameters
+        """
         self._parameters[key] = value
 
     def complete(self) -> None:
+        """
+        Mark the experiment as completed and persist all data (metadata, metrics, parameters).
+
+        This method finalizes the experiment by updating its status, recording completion
+        time, and saving all accumulated data to their respective category directories.
+
+        Examples
+        --------
+        Complete an experiment:
+
+        >>> experiment.complete()
+
+        This saves the following files:
+
+        ```
+        llama_0250609_122016/
+        ├── metadata/
+        │   └── experiment.json    # Updated with completion time and status
+        ├── metrics/
+        │   └── metrics.json       # Summary of all recorded metrics
+        └── parameters/
+            └── parameters.json    # All experiment parameters
+        ```
+
+        The metadata.json will be updated from:
+        ```json
+        {
+          "experiment_id": "llama_0250609_122016",
+          "status": "running",
+          "completed_at": null,
+          ...
+        }
+        ```
+
+        To:
+        ```json
+        {
+          "experiment_id": "llama_0250609_122016",
+          "status": "completed",
+          "completed_at": 1686307236.789,
+          ...
+        }
+        ```
+
+        Notes
+        -----
+        - **Idempotent**: Safe to call multiple times
+        - **Automatic persistence**: Saves metrics and parameters that haven't been saved yet
+        - **Status update**: Changes experiment status from "running" to "completed"
+        - **Timestamp recording**: Records exact completion time
+        - Call this method in a finally block to ensure experiment is always completed
+        """
         self._metadata = self._metadata.model_copy(
             update={
                 "completed_at": time.time(),
