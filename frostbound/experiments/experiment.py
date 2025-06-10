@@ -63,7 +63,14 @@ from frostbound.experiments.constants import (
     FileExtensions,
     FileNames,
 )
-from frostbound.experiments.models import ExperimentMetadataModel, SaveArtifactRequest, SaveArtifactsRequest
+from frostbound.experiments.models import (
+    ExperimentMetadataModel,
+    FileWriteOptions,
+    JsonSerializationOptions,
+    SaveArtifactRequest,
+    SaveArtifactsRequest,
+    YamlSerializationOptions,
+)
 from frostbound.experiments.types import (
     ArtifactKey,
     ArtifactPath,
@@ -429,7 +436,14 @@ class Experiment:
         self._storage.save(storage_key, source_file_path)
         return storage_key
 
-    def save_dict(self, dictionary: dict[str, Any], path: RelativePath) -> StorageKey:
+    def save_dict(
+        self,
+        dictionary: dict[str, Any],
+        path: RelativePath,
+        json_options: JsonSerializationOptions | None = None,
+        yaml_options: YamlSerializationOptions | None = None,
+        file_options: FileWriteOptions | None = None,
+    ) -> StorageKey:
         """
         Save a dictionary as JSON/YAML file to any path within the experiment directory.
 
@@ -444,6 +458,12 @@ class Experiment:
         path : RelativePath
             Relative path within the experiment directory where the file should be saved,
             including filename. Extension determines format: .yaml/.yml → YAML, others → JSON.
+        json_options : JsonSerializationOptions | None, optional
+            Custom JSON serialization options (indent, ensure_ascii, sort_keys, etc.)
+        yaml_options : YamlSerializationOptions | None, optional
+            Custom YAML serialization options (indent, default_flow_style, allow_unicode, etc.)
+        file_options : FileWriteOptions | None, optional
+            Custom file writing options (mode, encoding, newline)
 
         Returns
         -------
@@ -476,6 +496,14 @@ class Experiment:
         >>> experiment.save_dict(hyperparams, "training/hyperparameters.yaml")
         'llama_0250609_122016/training/hyperparameters.yaml'
 
+        Save with custom JSON options (ensure_ascii=False for Unicode support):
+
+        >>> from frostbound.experiments.models import JsonSerializationOptions
+        >>> data = {"name": "测试", "emoji": "🚀"}
+        >>> json_opts = JsonSerializationOptions(ensure_ascii=False, indent=2)
+        >>> experiment.save_dict(data, "artifacts/unicode_data.json", json_options=json_opts)
+        'llama_0250609_122016/artifacts/unicode_data.json'
+
         Resulting directory structure:
 
         ```
@@ -502,11 +530,33 @@ class Experiment:
         path = posixpath.normpath(path)
         extension = posixpath.splitext(path)[1]
 
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False) as tmp_file:
+        json_opts = json_options or JsonSerializationOptions()
+        yaml_opts = yaml_options or YamlSerializationOptions()
+        file_opts = file_options or FileWriteOptions()
+
+        with tempfile.NamedTemporaryFile(
+            mode=file_opts.mode,
+            encoding=file_opts.encoding,
+            newline=file_opts.newline,
+            delete=False,
+            **file_opts.kwargs,
+        ) as tmp_file:
             if extension in YAML_EXTENSIONS:
-                yaml.dump(dictionary, tmp_file, indent=4, default_flow_style=False)
+                yaml.dump(
+                    dictionary,
+                    tmp_file,
+                    indent=yaml_opts.indent,
+                    default_flow_style=yaml_opts.default_flow_style,
+                    **yaml_opts.kwargs,
+                )
             else:
-                json.dump(dictionary, tmp_file, indent=4, default=str)
+                json.dump(
+                    dictionary,
+                    tmp_file,
+                    indent=json_opts.indent,
+                    ensure_ascii=json_opts.ensure_ascii,
+                    **json_opts.kwargs,
+                )
             tmp_path = tmp_file.name
 
         try:
@@ -516,7 +566,12 @@ class Experiment:
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
-    def save_text(self, text: str, path: RelativePath) -> StorageKey:
+    def save_text(
+        self,
+        text: str,
+        path: RelativePath,
+        file_options: FileWriteOptions | None = None,
+    ) -> StorageKey:
         """
         Save text content as a file to any path within the experiment directory.
 
@@ -531,6 +586,8 @@ class Experiment:
         path : RelativePath
             Relative path within the experiment directory where the file should be saved,
             including filename.
+        file_options : FileWriteOptions | None, optional
+            Custom file writing options (mode, encoding, newline)
 
         Returns
         -------
@@ -586,8 +643,15 @@ class Experiment:
         - Use save_dict() for structured data that needs JSON/YAML formatting
         """
         path = posixpath.normpath(path)
+        file_opts = file_options or FileWriteOptions()
 
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False) as tmp_file:
+        with tempfile.NamedTemporaryFile(
+            mode=file_opts.mode,
+            encoding=file_opts.encoding,
+            newline=file_opts.newline,
+            delete=False,
+            **file_opts.kwargs,
+        ) as tmp_file:
             tmp_file.write(text)
             tmp_path = tmp_file.name
 
@@ -770,14 +834,32 @@ class Experiment:
         category: Categories,
         filename: str,
         suffix: FileExtensions = FileExtensions.JSON,
+        json_options: JsonSerializationOptions | None = None,
+        file_options: FileWriteOptions | None = None,
     ) -> None:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False, suffix=suffix) as tmp_file:
+        json_opts = json_options or JsonSerializationOptions()
+        file_opts = file_options or FileWriteOptions()
+
+        with tempfile.NamedTemporaryFile(
+            mode=file_opts.mode,
+            encoding=file_opts.encoding,
+            newline=file_opts.newline,
+            delete=False,
+            suffix=suffix,
+            **file_opts.kwargs,
+        ) as tmp_file:
             tmp_path = Path(tmp_file.name)
 
             if isinstance(data, BaseModel):
-                tmp_file.write(data.model_dump_json(indent=4))
+                tmp_file.write(data.model_dump_json(indent=json_opts.indent or 4))
             else:
-                json.dump(data, tmp_file, indent=4)
+                json.dump(
+                    data,
+                    tmp_file,
+                    indent=json_opts.indent,
+                    ensure_ascii=json_opts.ensure_ascii,
+                    **json_opts.kwargs,
+                )
 
         try:
             storage_key = self._generate_storage_key(category, filename)

@@ -124,3 +124,28 @@ class SaveArtifactsRequest(BaseModel):
         if normalized.startswith(("/", "../")):
             raise ValueError(f"Artifact path must be relative: {value}")
         return normalized
+
+
+class JsonSerializationOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    indent: int | None = 4
+    ensure_ascii: bool = True
+    kwargs: dict[str, Any] = Field(default_factory=dict)
+
+
+class YamlSerializationOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    indent: int = 4
+    default_flow_style: bool = False
+    kwargs: dict[str, Any] = Field(default_factory=dict)
+
+
+class FileWriteOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str = "w"
+    encoding: str = "utf-8"
+    newline: str | None = None
+    kwargs: dict[str, Any] = Field(default_factory=dict)
