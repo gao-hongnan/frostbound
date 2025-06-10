@@ -539,7 +539,7 @@ class Experiment:
             encoding=file_opts.encoding,
             newline=file_opts.newline,
             delete=False,
-            **file_opts.kwargs,
+            **file_opts.extra_kwargs,
         ) as tmp_file:
             if extension in YAML_EXTENSIONS:
                 yaml.dump(
@@ -547,7 +547,7 @@ class Experiment:
                     tmp_file,
                     indent=yaml_opts.indent,
                     default_flow_style=yaml_opts.default_flow_style,
-                    **yaml_opts.kwargs,
+                    **yaml_opts.extra_kwargs,
                 )
             else:
                 json.dump(
@@ -555,7 +555,7 @@ class Experiment:
                     tmp_file,
                     indent=json_opts.indent,
                     ensure_ascii=json_opts.ensure_ascii,
-                    **json_opts.kwargs,
+                    **json_opts.extra_kwargs,
                 )
             tmp_path = tmp_file.name
 
@@ -650,7 +650,7 @@ class Experiment:
             encoding=file_opts.encoding,
             newline=file_opts.newline,
             delete=False,
-            **file_opts.kwargs,
+            **file_opts.extra_kwargs,
         ) as tmp_file:
             tmp_file.write(text)
             tmp_path = tmp_file.name
@@ -846,7 +846,7 @@ class Experiment:
             newline=file_opts.newline,
             delete=False,
             suffix=suffix,
-            **file_opts.kwargs,
+            **file_opts.extra_kwargs,
         ) as tmp_file:
             tmp_path = Path(tmp_file.name)
 
@@ -858,7 +858,7 @@ class Experiment:
                     tmp_file,
                     indent=json_opts.indent,
                     ensure_ascii=json_opts.ensure_ascii,
-                    **json_opts.kwargs,
+                    **json_opts.extra_kwargs,
                 )
 
         try:
