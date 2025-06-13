@@ -270,7 +270,7 @@ class CircuitBreaker(Generic[R]):
 
             if self.fallback:
                 logger.info(f"Using fallback for {func.__name__}")
-                return cast(R, self.fallback(*args, **kwargs))
+                return self.fallback(*args, **kwargs)
 
             raise CircuitBreakerError(f"Circuit breaker is open for {func.__name__}")
 
@@ -313,7 +313,7 @@ class CircuitBreaker(Generic[R]):
                 logger.info(f"Using fallback for {func.__name__}")
                 if inspect.iscoroutinefunction(self.fallback):
                     return cast(R, await self.fallback(*args, **kwargs))
-                return cast(R, self.fallback(*args, **kwargs))
+                return self.fallback(*args, **kwargs)
 
             raise CircuitBreakerError(f"Circuit breaker is open for {func.__name__}")
 
@@ -326,7 +326,7 @@ class CircuitBreaker(Generic[R]):
             raise
 
     @contextmanager
-    def context(self) -> Generator[CircuitBreakerState, None, None]:
+    def context(self) -> Generator[CircuitBreakerState]:
         """
         Context manager for circuit breaker.
 

@@ -26,8 +26,8 @@ lint: .uv
 typecheck: .uv
 	uv run mypy $(SOURCES)
 	uv run pyright $(SOURCES)
-	@echo "Running ty (experimental)..."
-	uv run ty check $(SOURCES) || echo "ty check failed (expected for pre-release)"
+	# @echo "Running ty (experimental)..."
+	# uv run ty check $(SOURCES) || echo "ty check failed (expected for pre-release)"
 
 .PHONY: test
 test: .uv

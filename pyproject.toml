@@ -44,7 +44,6 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["frostbound"]
 
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"

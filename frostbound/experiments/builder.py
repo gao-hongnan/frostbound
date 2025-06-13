@@ -61,14 +61,14 @@ class ExperimentBuilder:
         if self._config.experiment_id is None:
             self._config = self._config.model_copy()
 
-        experiment_id = self._config.experiment_id
+        experiment_id = self._config.experiment_id or "experiment"
 
-        if self._auto_timestamp and experiment_id:
+        if self._auto_timestamp:
             timestamp = time.strftime(TIMESTAMP_FORMAT)
             experiment_id = f"{experiment_id}_{timestamp}"
 
         experiment = Experiment(
-            experiment_id=experiment_id,  # type: ignore[arg-type]
+            experiment_id=experiment_id,
             storage=self._storage,
             description=self._config.description,
             tags=self._config.tags,
