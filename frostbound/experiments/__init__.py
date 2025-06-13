@@ -16,7 +16,6 @@ __all__ = [
     "Experiment",
     "ExperimentBuilder",
     "ExperimentConfig",
-    "ExperimentMetadata",
     "ExperimentMetadataModel",
     "ExperimentProtocol",
     "InMemoryStorage",

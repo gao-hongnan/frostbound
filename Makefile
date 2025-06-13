@@ -1,6 +1,8 @@
-.DEFAULT_GOAL := all
+.DEFAULT_GOAL := help
 
-sources = frostbound
+PACKAGE_NAME := frostbound
+TEST_DIR := tests
+SOURCES := $(PACKAGE_NAME) $(TEST_DIR)
 
 .PHONY: .uv
 .uv:
@@ -11,31 +13,29 @@ install: .uv
 	uv sync --frozen --group all --all-extras
 
 .PHONY: format
-format:
-	uv run ruff check --fix --exit-zero $(sources)
-	uv run ruff format $(sources)
+format: .uv
+	uv run ruff check --fix --exit-zero $(SOURCES)
+	uv run ruff format $(SOURCES)
 
 .PHONY: lint
-lint:
-	uv run ruff check $(sources)
-	uv run ruff format --check $(sources)
+lint: .uv
+	uv run ruff check $(SOURCES)
+	uv run ruff format --check $(SOURCES)
 
 .PHONY: typecheck
-typecheck:
-	uv run mypy $(sources)
-	uv run pyright $(sources)
+typecheck: .uv
+	uv run mypy $(SOURCES)
+	uv run pyright $(SOURCES)
+	@echo "Running ty (experimental)..."
+	uv run ty check $(SOURCES) || echo "ty check failed (expected for pre-release)"
 
 .PHONY: test
 test: .uv
-	uv run pytest tests
-
-.PHONY: testcov
-testcov: .uv
-	uv run pytest --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml tests
+	uv run pytest $(TEST_DIR)
 
 .PHONY: coverage
 coverage: .uv
-	uv run coverage run -m pytest tests
+	uv run coverage run -m pytest $(TEST_DIR)
 	uv run coverage report
 	uv run coverage html
 	uv run coverage xml
@@ -45,38 +45,33 @@ docs:
 	cd docs && make html
 
 .PHONY: ci
-ci: lint typecheck test coverage
+ci: format lint typecheck test coverage
 
-.PHONY: rebuild-lockfiles
-rebuild-lockfiles: .uv
+.PHONY: lock
+lock: .uv
 	uv lock --upgrade
 
 .PHONY: clean
 clean:
 	rm -rf `find . -name __pycache__`
 	rm -f `find . -type f -name '*.py[co]'`
-	rm -rf .cache
-	rm -rf .pytest_cache
-	rm -rf .ruff_cache
-	rm -rf htmlcov
-	rm -f .coverage
-	rm -rf coverage.xml
-	rm -rf .mypy_cache
-	rm .dmypy.json
+	rm -rf .cache .pytest_cache .ruff_cache .mypy_cache
+	rm -rf htmlcov coverage.xml
+	rm -f .coverage .dmypy.json
 
 .PHONY: help
 help:
-	@echo "Usage:"
-	@echo "  make dev                Run the package with developer settings"
-	@echo "  make prod               Run the pacakge with production settings"
-	@echo "  make test               CI: Run tests"
-	@echo "  make cov                CI: Run test and calculate coverage"
-	@echo "  make check              CI: Lint the code"
-	@echo "  make format             CI: Format the code"
-	@echo "  make type               CI: Check typing"
-	@echo "  make doc                Run local documentation server"
-	@echo "  make build              Build the package wheel before publishing to Pypi"
-	@echo "  make publish            Publish package to Pypi"
-	@echo "  make dockerbuild        Build the docker image"
-	@echo "  make dockerrun          Run the docker image"
-	@echo "  make ci                 Run all CI steps (check, format, type, test coverage)"
+	@echo "Development Commands:"
+	@echo "  install             Install dependencies"
+	@echo "  format              Format code with ruff"
+	@echo "  lint                Lint code with ruff"
+	@echo "  typecheck           Run type checking with mypy, pyright, and ty"
+	@echo "  test                Run tests with pytest"
+	@echo "  coverage            Run tests with coverage reporting"
+	@echo "  docs                Build documentation"
+	@echo "  ci                  Run full CI pipeline (lint, typecheck, test, coverage)"
+	@echo ""
+	@echo "Utility Commands:"
+	@echo "  lock                Update lock files"
+	@echo "  clean               Clean build artifacts and cache files"
+	@echo "  help                Show this help message"
