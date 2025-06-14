@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, ClassVar, Self
 
 from pydantic import BaseModel
 
@@ -8,14 +8,14 @@ from frostbound.pydanticonf.base import DynamicConfig
 
 
 class ConfigRegistry:
-    _instance: ConfigRegistry | None = None
+    _instance: ClassVar[ConfigRegistry | None] = None
     _mappings: dict[str, type[BaseModel]]
 
-    def __new__(cls) -> ConfigRegistry:
+    def __new__(cls) -> Self:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._mappings = {}
-        return cls._instance
+        return cls._instance  # type: ignore[return-value]
 
     def register(self, target: str, config_class: type[BaseModel]) -> None:
         self._mappings[target] = config_class

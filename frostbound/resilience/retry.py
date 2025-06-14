@@ -1151,7 +1151,7 @@ class Retry(Generic[R, E]):
             raise RuntimeError("Retry instance must be used as a decorator or within a context manager")
 
     @contextmanager
-    def __call_context(self, fn: Callable[P, R]) -> Generator[Retry[R, E], None, None]:
+    def __call_context(self, fn: Callable[P, R]) -> Generator[Retry[R, E]]:
         """
         Synchronous context manager.
 
@@ -1172,7 +1172,7 @@ class Retry(Generic[R, E]):
             delattr(self, "_fn")
 
     @asynccontextmanager
-    async def __async_call_context(self, fn: Callable[P, Awaitable[R]]) -> AsyncGenerator[Retry[R, E], None]:
+    async def __async_call_context(self, fn: Callable[P, Awaitable[R]]) -> AsyncGenerator[Retry[R, E]]:
         """
         Asynchronous context manager.
 
