@@ -99,6 +99,8 @@ class ConfigFactory:
             if isinstance(value, DynamicConfig):
                 kwargs[key] = cls.create(value)
             elif isinstance(value, dict) and "_target_" in value:
+                from frostbound.pydanticonf.loader import ConfigurationLoader
+
                 config = ConfigurationLoader._create_dynamic_config(value)
                 if isinstance(config, DynamicConfig):
                     kwargs[key] = cls.create(config)

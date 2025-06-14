@@ -4,7 +4,6 @@ from typing import Any, ClassVar, Generic
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from frostbound.pydanticonf.factory import ConfigFactory
 from frostbound.pydanticonf.types import InstanceT
 
 
@@ -29,6 +28,8 @@ class DynamicConfig(BaseModel, Generic[InstanceT]):
         return module_path, class_name
 
     def instantiate(self, **dependencies: Any) -> InstanceT:
+        from frostbound.pydanticonf.factory import ConfigFactory
+
         return ConfigFactory.create(self, **dependencies)
 
     def extract_config_kwargs(self) -> dict[str, Any]:
