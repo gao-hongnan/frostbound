@@ -13,11 +13,12 @@ class DependencyRegistry:
     _instance: ClassVar[DependencyRegistry | None] = None
     _dependencies: dict[str, Any]
 
-    def __new__(cls) -> Self:
+    def __new__(cls: type[Self]) -> Self:
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._dependencies = {}
-        return cls._instance  # type: ignore[return-value]
+            instance = super().__new__(cls)
+            cls._instance = instance
+            instance._dependencies = {}
+        return cast(Self, cls._instance)
 
     def register(self, name: str, dependency: Any) -> None:
         self._dependencies[name] = dependency
@@ -39,15 +40,15 @@ class ConfigFactory:
     _registry = DependencyRegistry()
 
     @classmethod
-    def register_dependency(cls, name: str, dependency: Any) -> None:
+    def register_dependency(cls: type[Self], name: str, dependency: Any) -> None:
         cls._registry.register(name, dependency)
 
     @classmethod
-    def register_type(cls, dependency_type: type[T], instance: T) -> None:
+    def register_type(cls: type[Self], dependency_type: type[T], instance: T) -> None:
         cls._registry.register_type(dependency_type, instance)
 
     @classmethod
-    def create(cls, config: DynamicConfig[T], **overrides: Any) -> T:
+    def create(cls: type[Self], config: DynamicConfig[T], **overrides: Any) -> T:
         module_path, class_name = config.get_class_path()
 
         module = importlib.import_module(module_path)
@@ -64,8 +65,10 @@ class ConfigFactory:
         return target_class(**kwargs)
 
     @classmethod
-    def _inject_dependencies(cls, target_class: TargetClass[Any], kwargs: dict[str, Any]) -> None:
-        signature = inspect.signature(target_class.__init__)  # type: ignore[misc]
+    def _inject_dependencies(cls: type[Self], target_class: TargetClass[Any], kwargs: dict[str, Any]) -> None:
+        # Get init signature from the target class
+        # Since TargetClass is a Protocol with __call__, we inspect the callable itself
+        signature = inspect.signature(target_class)
 
         for param_name, param in signature.parameters.items():
             if param_name == "self" or param_name in kwargs:
@@ -80,7 +83,7 @@ class ConfigFactory:
                 kwargs[param_name] = dependency
 
     @classmethod
-    def _find_dependency(cls, param_name: str, param_type: Any) -> Any:
+    def _find_dependency(cls: type[Self], param_name: str, param_type: Any) -> Any:
         dependency = cls._registry.get(param_name)
         if dependency is not None:
             return dependency
@@ -94,7 +97,7 @@ class ConfigFactory:
         return cls._registry.get(type_name)
 
     @classmethod
-    def _process_nested_configs(cls, kwargs: dict[str, Any]) -> None:
+    def _process_nested_configs(cls: type[Self], kwargs: dict[str, Any]) -> None:
         for key, value in kwargs.items():
             if isinstance(value, DynamicConfig):
                 kwargs[key] = cls.create(value)
@@ -110,7 +113,7 @@ class ConfigFactory:
                 kwargs[key] = [cls._process_value(item) for item in value]
 
     @classmethod
-    def _process_value(cls, value: Any) -> Any:
+    def _process_value(cls: type[Self], value: Any) -> Any:
         if isinstance(value, DynamicConfig):
             return cls.create(value)
         elif isinstance(value, dict) and "_target_" in value:
@@ -131,4 +134,4 @@ class FactoryProvider(DependencyProvider):
         instance = ConfigFactory._registry.get_by_type(dependency_type)
         if instance is None:
             raise ValueError(f"No dependency registered for type {dependency_type}")
-        return instance  # type: ignore[no-any-return]
+        return instance

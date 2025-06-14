@@ -11,11 +11,12 @@ class ConfigRegistry:
     _instance: ClassVar[ConfigRegistry | None] = None
     _mappings: dict[str, type[BaseModel]]
 
-    def __new__(cls) -> Self:
+    def __new__(cls: type[Self]) -> Self:
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._mappings = {}
-        return cls._instance  # type: ignore[return-value]
+            instance = super().__new__(cls)
+            cls._instance = instance
+            instance._mappings = {}
+        return cast(Self, cls._instance)
 
     def register(self, target: str, config_class: type[BaseModel]) -> None:
         self._mappings[target] = config_class

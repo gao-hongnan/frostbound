@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import yaml
 from pydantic import BaseModel
@@ -14,7 +14,7 @@ from frostbound.pydanticonf.types import SettingsT
 
 class ConfigurationLoader:
     @classmethod
-    def load_yaml(cls, yaml_path: Path) -> dict[str, Any]:
+    def load_yaml(cls: type[Self], yaml_path: Path) -> dict[str, Any]:
         if not yaml_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {yaml_path}")
 
@@ -22,7 +22,7 @@ class ConfigurationLoader:
             return yaml.safe_load(f) or {}
 
     @classmethod
-    def load_env_overrides(cls, prefix: str = "") -> dict[str, Any]:
+    def load_env_overrides(cls: type[Self], prefix: str = "") -> dict[str, Any]:
         env_vars: dict[str, Any] = {}
         prefix = f"{prefix}_" if prefix else ""
 
@@ -33,7 +33,7 @@ class ConfigurationLoader:
         return env_vars
 
     @classmethod
-    def _set_nested_value(cls, data: dict[str, Any], key: str, value: str) -> None:
+    def _set_nested_value(cls: type[Self], data: dict[str, Any], key: str, value: str) -> None:
         parts = key.lower().split("__")
         current: Any = data
 
@@ -51,14 +51,14 @@ class ConfigurationLoader:
             current[final_key] = value
 
     @classmethod
-    def merge_configs(cls, *configs: dict[str, Any]) -> dict[str, Any]:
+    def merge_configs(cls: type[Self], *configs: dict[str, Any]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for config in configs:
             cls._deep_merge(result, config)
         return result
 
     @classmethod
-    def _deep_merge(cls, target: dict[str, Any], source: dict[str, Any]) -> None:
+    def _deep_merge(cls: type[Self], target: dict[str, Any], source: dict[str, Any]) -> None:
         for key, value in source.items():
             if key in target and isinstance(target[key], dict) and isinstance(value, dict):
                 cls._deep_merge(target[key], value)
@@ -67,7 +67,7 @@ class ConfigurationLoader:
 
     @classmethod
     def load(
-        cls,
+        cls: type[Self],
         settings_class: type[SettingsT],
         yaml_path: Path | None = None,
         env_prefix: str = "",
@@ -83,7 +83,7 @@ class ConfigurationLoader:
         return settings_class(**merged_data)
 
     @classmethod
-    def process_dynamic_configs(cls, data: dict[str, Any]) -> dict[str, Any]:
+    def process_dynamic_configs(cls: type[Self], data: dict[str, Any]) -> dict[str, Any]:
         processed: dict[str, Any] = {}
 
         for key, value in data.items():
@@ -104,10 +104,10 @@ class ConfigurationLoader:
         return processed
 
     @classmethod
-    def _create_dynamic_config(cls, data: dict[str, Any]) -> BaseModel:
+    def _create_dynamic_config(cls: type[Self], data: dict[str, Any]) -> BaseModel:
         config_class: type[BaseModel] = cls._resolve_config_class(data["_target_"])
         return config_class(**data)
 
     @classmethod
-    def _resolve_config_class(cls, target: str) -> type[BaseModel]:
+    def _resolve_config_class(cls: type[Self], target: str) -> type[BaseModel]:
         return config_registry.get_config_class(target)
