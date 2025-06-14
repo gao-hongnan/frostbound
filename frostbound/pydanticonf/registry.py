@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, ClassVar, Self
+from typing import Any, Callable, ClassVar, Self, cast
 
 from pydantic import BaseModel
 
@@ -37,7 +37,7 @@ class ConfigRegistry:
         if data is None:
             data = {}
         data["_target_"] = target
-        return generic_class(**data)  # type: ignore[no-any-return]
+        return cast(BaseModel, generic_class(**data))
 
     def get_config_class(self, target: str) -> type[BaseModel]:
         if target in self._mappings:

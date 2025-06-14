@@ -89,7 +89,7 @@ class ConfigurationLoader:
         for key, value in data.items():
             if isinstance(value, dict):
                 if "_target_" in value:
-                    target_class = cls._resolve_config_class(value["_target_"])
+                    target_class: type[BaseModel] = cls._resolve_config_class(value["_target_"])
                     processed[key] = target_class(**value)
                 else:
                     processed[key] = cls.process_dynamic_configs(value)
@@ -105,7 +105,7 @@ class ConfigurationLoader:
 
     @classmethod
     def _create_dynamic_config(cls, data: dict[str, Any]) -> BaseModel:
-        config_class = cls._resolve_config_class(data["_target_"])
+        config_class: type[BaseModel] = cls._resolve_config_class(data["_target_"])
         return config_class(**data)
 
     @classmethod

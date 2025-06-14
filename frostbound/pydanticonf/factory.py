@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import importlib
 import inspect
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Self, cast
 
 from frostbound.pydanticonf.base import DynamicConfig
 from frostbound.pydanticonf.loader import ConfigurationLoader
-from frostbound.pydanticonf.types import DependencyProvider, T
+from frostbound.pydanticonf.types import DependencyProvider, T, TargetClass
 
 
 class DependencyRegistry:
@@ -22,14 +22,14 @@ class DependencyRegistry:
     def register(self, name: str, dependency: Any) -> None:
         self._dependencies[name] = dependency
 
-    def register_type(self, dependency_type: type[Any], instance: Any) -> None:
+    def register_type(self, dependency_type: type[T], instance: T) -> None:
         self._dependencies[dependency_type.__name__] = instance
 
     def get(self, name: str) -> Any:
         return self._dependencies.get(name)
 
-    def get_by_type(self, dependency_type: type[Any]) -> Any:
-        return self._dependencies.get(dependency_type.__name__)
+    def get_by_type(self, dependency_type: type[T]) -> T | None:
+        return cast(T | None, self._dependencies.get(dependency_type.__name__))
 
     def clear(self) -> None:
         self._dependencies.clear()
@@ -43,7 +43,7 @@ class ConfigFactory:
         cls._registry.register(name, dependency)
 
     @classmethod
-    def register_type(cls, dependency_type: type[Any], instance: Any) -> None:
+    def register_type(cls, dependency_type: type[T], instance: T) -> None:
         cls._registry.register_type(dependency_type, instance)
 
     @classmethod
@@ -51,7 +51,7 @@ class ConfigFactory:
         module_path, class_name = config.get_class_path()
 
         module = importlib.import_module(module_path)
-        target_class: type[T] = getattr(module, class_name)
+        target_class = cast(TargetClass[T], getattr(module, class_name))
 
         kwargs = config.extract_config_kwargs()
 
@@ -64,8 +64,8 @@ class ConfigFactory:
         return target_class(**kwargs)
 
     @classmethod
-    def _inject_dependencies(cls, target_class: type[Any], kwargs: dict[str, Any]) -> None:
-        signature = inspect.signature(target_class.__init__)
+    def _inject_dependencies(cls, target_class: TargetClass[Any], kwargs: dict[str, Any]) -> None:
+        signature = inspect.signature(target_class.__init__)  # type: ignore[misc]
 
         for param_name, param in signature.parameters.items():
             if param_name == "self" or param_name in kwargs:
@@ -80,7 +80,7 @@ class ConfigFactory:
                 kwargs[param_name] = dependency
 
     @classmethod
-    def _find_dependency(cls, param_name: str, param_type: type[Any]) -> Any:
+    def _find_dependency(cls, param_name: str, param_type: Any) -> Any:
         dependency = cls._registry.get(param_name)
         if dependency is not None:
             return dependency
